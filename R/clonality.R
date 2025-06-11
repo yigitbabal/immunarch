@@ -42,6 +42,8 @@
 #' @param .head A numerical vector with ranges of the top clonotypes.
 #' @param .bound A numerical vector with ranges of abundance for the rare clonotypes in
 #' the dataset.
+#' @param .export.table Logical; if TRUE and .method is "homeo", returns a list with proportions matrix and 
+#' a dataframe containing clone type assignments. Default is FALSE.
 #'
 #' @details Clonal proportion assessment is a different approach to estimate
 #' repertoire diversity. When visualised, it allows for thorough examination of
@@ -60,6 +62,12 @@
 #'
 #' Otherwise, it returns a numeric matrix with clonality statistics for all input repertoires.
 #'
+#' If .method is "homeo" and .export.table is TRUE, returns a list with two elements:
+#' \itemize{
+#'   \item proportions: The matrix with proportions per sample and clone type
+#'   \item clone_table: A dataframe with clone type assignments for each clone
+#' }
+#'
 #' @seealso \link{repDiversity}
 #'
 #' @examples
@@ -77,6 +85,13 @@
 #'
 #' imm_hom <- repClonality(immdata$data, .method = "homeo")
 #' vis(imm_hom)
+#'
+#' # Get both proportions and clone type assignments table
+#' imm_hom_with_table <- repClonality(immdata$data, .method = "homeo", .export.table = TRUE)
+#' # Access proportions
+#' imm_hom_with_table$proportions
+#' # Access clone type assignments table
+#' head(imm_hom_with_table$clone_table)
 #' @export repClonality
 repClonality <- function(.data, .method = c("clonal.prop", "homeo", "top", "rare"),
                          .perc = 10, .clone.types = c(
@@ -84,14 +99,15 @@ repClonality <- function(.data, .method = c("clonal.prop", "homeo", "top", "rare
                            Medium = .001, Large = .01, Hyperexpanded = 1
                          ),
                          .head = c(10, 100, 1000, 3000, 10000, 30000, 100000),
-                         .bound = c(1, 3, 10, 30, 100)) {
+                         .bound = c(1, 3, 10, 30, 100),
+                         .export.table = FALSE) {
   .method <- .method[1]
   if (.method == "tail") {
     .method <- "rare"
   }
   res <- switch(.method[1],
     clonal.prop = clonal_proportion(.data, .perc),
-    homeo = clonal_space_homeostasis(.data, .clone.types),
+    homeo = clonal_space_homeostasis(.data, .clone.types, .export.table),
     top = top_proportion(.data, .head),
     rare = rare_proportion(.data, .bound),
     stop("Wrong method")
@@ -125,7 +141,8 @@ clonal_proportion <- function(.data, .perc = 10) {
 clonal_space_homeostasis <- function(.data, .clone.types = c(
                                        Rare = .00001, Small = .0001,
                                        Medium = .001, Large = .01, Hyperexpanded = 1
-                                     )) {
+                                     ),
+                                     .export.table = FALSE) {
   .clone.types <- c(None = 0, .clone.types)
 
   if (!has_class(.data, "list")) {
@@ -133,8 +150,13 @@ clonal_space_homeostasis <- function(.data, .clone.types = c(
   }
 
   mat <- matrix(0, length(.data), length(.clone.types) - 1, dimnames = list(names(.data), names(.clone.types)[-1]))
+  
+  # If export.table is TRUE, create a list to store clone type assignments
+  if (.export.table) {
+    clone_tables <- list()
+  }
 
-  .data <- lapply(.data, function(d) {
+  .data_proportions <- lapply(.data, function(d) {
     if (has_class(d, "data.table")) {
       d <- d %>% lazy_dt()
     }
@@ -144,11 +166,87 @@ clonal_space_homeostasis <- function(.data, .clone.types = c(
   })
 
   for (i in 2:length(.clone.types)) {
-    mat[, i - 1] <- sapply(.data, function(x) sum(x[x > .clone.types[i - 1] & x <= .clone.types[i]]))
+    mat[, i - 1] <- sapply(.data_proportions, function(x) sum(x[x > .clone.types[i - 1] & x <= .clone.types[i]]))
     colnames(mat)[i - 1] <- paste0(names(.clone.types[i]), " (", .clone.types[i - 1], " < X <= ", .clone.types[i], ")")
   }
-
-  add_class(mat, "immunr_homeo")
+  
+  # Create detailed clone type tables if export.table is TRUE
+  if (.export.table) {
+    clone_tables <- lapply(seq_along(.data), function(idx) {
+      sample_name <- names(.data)[idx]
+      d <- .data[[idx]]
+      
+      if (has_class(d, "data.table")) {
+        d <- d %>% lazy_dt()
+      }
+      
+      # Collect necessary columns: count and proportion
+      counts <- collect(select(d, IMMCOL$count), n = Inf)[[1]]
+      proportions <- .data_proportions[[idx]]
+      
+      # Try to collect other identifying columns if they exist
+      cols_to_try <- c(IMMCOL$cdr3aa, IMMCOL$cdr3nt, IMMCOL$v, IMMCOL$j, "Barcode")
+      id_cols <- list()
+      
+      for (col_name in cols_to_try) {
+        tryCatch({
+          # Check if column exists
+          if (col_name == "Barcode") {
+            # Try different column names that might contain barcode information
+            possible_barcode_cols <- c("Barcode", "barcode", "cell_id", "CellID", "cell.id", "Cell.ID")
+            for (bc_col in possible_barcode_cols) {
+              tryCatch({
+                id_cols[[col_name]] <- collect(select(d, bc_col), n = Inf)[[1]]
+                break  # If successful, break the loop
+              }, error = function(e) {
+                # Continue to next possible column name
+              })
+            }
+          } else {
+            id_cols[[col_name]] <- collect(select(d, col_name), n = Inf)[[1]]
+          }
+        }, error = function(e) {
+          # Column doesn't exist, skip it
+        })
+      }
+      
+      # Determine clone type for each clone
+      clone_type <- rep(NA, length(proportions))
+      for (i in 2:length(.clone.types)) {
+        type_name <- names(.clone.types)[i]
+        clone_type[proportions > .clone.types[i-1] & proportions <= .clone.types[i]] <- type_name
+      }
+      
+      # Create result dataframe
+      result <- data.frame(
+        Sample = sample_name,
+        Count = counts,
+        Proportion = proportions,
+        CloneType = clone_type
+      )
+      
+      # Add identifier columns if they exist
+      for (col_name in names(id_cols)) {
+        result[[col_name]] <- id_cols[[col_name]]
+      }
+      
+      return(result)
+    })
+    
+    # Combine all sample tables into one
+    combined_table <- do.call(rbind, clone_tables)
+    
+    # Return both the proportions matrix and the detailed clone table
+    result <- list(
+      proportions = add_class(mat, "immunr_homeo"),
+      clone_table = combined_table
+    )
+    
+    return(result)
+  } else {
+    # Just return the proportions matrix as before
+    return(add_class(mat, "immunr_homeo"))
+  }
 }
 
 top_proportion <- function(.data, .head = c(10, 100, 1000, 3000, 10000, 30000, 100000)) {

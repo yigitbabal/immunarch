@@ -7,7 +7,7 @@ if (getRversion() >= "2.15.1") {
 #'
 #' @concept diversity
 #'
-#' @aliases repDiversity chao1 hill_numbers diversity_eco gini_simpson inverse_simpson gini_coef rarefaction
+#' @aliases repDiversity chao1 hill_numbers diversity_eco gini_simpson inverse_simpson gini_coef rarefaction shannon_diversity
 #'
 #' @importFrom reshape2 melt
 #' @importFrom utils tail
@@ -36,7 +36,7 @@ if (getRversion() >= "2.15.1") {
 #' Note: each connection must represent a separate repertoire.
 #'
 #' @param .method Picks a method used for estimation out of a following list: chao1,
-#' hill, div, gini.simp, inv.simp, gini, raref, d50, dxx.
+#' hill, div, gini.simp, inv.simp, gini, raref, d50, dxx, shannon.
 #' @param .col A string that specifies the column(s) to be processed. Pass one of the
 #' following strings, separated by the plus sign: "nt" for nucleotide sequences,
 #' "aa" for amino acid sequences, "v" for V gene segments, "j" for J gene segments. E.g.,
@@ -59,7 +59,7 @@ if (getRversion() >= "2.15.1") {
 #' @param .laplace A numeric value, which is used as a pseudocount for Laplace
 #' smoothing.
 #'
-#' @return div, gini, gini.simp, inv.simp, raref return numeric vector of length 1
+#' @return div, gini, gini.simp, inv.simp, raref, shannon return numeric vector of length 1
 #' with value.
 #'
 #' chao1 returns 4 values: estimated number of species, standart deviation of
@@ -98,6 +98,10 @@ if (getRversion() >= "2.15.1") {
 #' following amplification and sequencing
 #'
 #' - dXX is a similar to d50 index where XX corresponds to desirable percent of total sequencing reads.
+#' 
+#' - Shannon diversity index (Shannon entropy) measures the uncertainty in predicting the species identity
+#' of an individual that is taken at random from the dataset. It increases as both the richness
+#' and the evenness of the community increase.
 #'
 #' @return
 #' For most methods, if input data is a single immune repertoire, then the function returns a numeric vector
@@ -151,6 +155,9 @@ if (getRversion() >= "2.15.1") {
 #'
 #' # d50
 #' repDiversity(.data = immdata$data, .method = "d50") %>% vis()
+#'
+#' # Shannon diversity
+#' repDiversity(.data = immdata$data, .method = "shannon", .do.norm = NA, .laplace = 0) %>% vis()
 #' @export repDiversity
 repDiversity <- function(.data, .method = "chao1", .col = "aa", .max.q = 6, .min.q = 1, .q = 5, .step = NA,
                          .quantile = c(.025, .975), .extrapolation = NA, .perc = 50,
@@ -175,7 +182,7 @@ repDiversity <- function(.data, .method = "chao1", .col = "aa", .max.q = 6, .min
       res <- reshape2::melt(res)
       colnames(res) <- c("Sample", "Q", "Value")
       res$Q <- as.numeric(sapply(res$Q, stringr::str_sub, start = 2))
-    } else if (.method %in% c("div", "gini.simp", "inv.simp")) {
+    } else if (.method %in% c("div", "gini.simp", "inv.simp", "shannon")) {
       res <- reshape2::melt(res)[c(1, 3)]
       colnames(res) <- c("Sample", "Value")
     } else if (.method == "chao1") {
@@ -222,6 +229,7 @@ repDiversity <- function(.data, .method = "chao1", .col = "aa", .max.q = 6, .min
     gini.simp = gini_simpson(.data = vec, .do.norm = TRUE, .laplace = .laplace),
     inv.simp = inverse_simpson(.data = vec, .do.norm = TRUE, .laplace = .laplace),
     gini = gini_coef(.data = vec, .do.norm = TRUE, .laplace = .laplace),
+    shannon = shannon_diversity(.data = vec, .do.norm = TRUE, .laplace = .laplace),
     raref = rarefaction(
       .data = vec, .step = .step, .quantile = .quantile,
       .extrapolation = .extrapolation, .norm = .norm, .verbose = .verbose
@@ -322,6 +330,15 @@ inverse_simpson <- function(.data, .do.norm = NA, .laplace = 0) {
   .data <- check_distribution(.data, .do.norm, .laplace)
   res <- 1 / sum(.data^2)
   add_class(res, "immunr_invsimp")
+}
+
+shannon_diversity <- function(.data, .do.norm = NA, .laplace = 0) {
+  # Ensure the data is a probability distribution (sums to 1)
+  .data <- check_distribution(.data, .do.norm, .laplace)
+  # Remove zeroes to avoid log(0)
+  .data <- .data[.data > 0]
+  res <- -sum(.data * log(.data))
+  add_class(res, "immunr_shannon")
 }
 
 dXX <- function(.data, .perc = 10) {

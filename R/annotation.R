@@ -167,38 +167,58 @@ dbLoad <- function(.path, .db, .species = NA, .chain = NA, .pathology = NA) {
 #' res <- dbAnnotate(immdata$data, db, "CDR3.aa", "cdr3")
 #' res
 #' @export dbAnnotate
-dbAnnotate <- function(.data, .db, .data.col, .db.col) {
-  # Check if the number of columns is equal
+#' Annotate clonotypes in immune repertoires using databases with distance-based matching
+#' @param .max_dist Integer. Maximum Levenshtein distance allowed for annotation (set to 0 for exact match).
+dbAnnotate <- function(.data, .db, .data.col, .db.col, .max_dist = 0) {
   if (length(.data.col) != length(.db.col)) {
     stop("Number of columns in .data.col and .db.col doesn't match! Please provide equal number of columns.")
   }
-
   if (!has_class(.data, "list")) {
     .data <- list(Sample = .data)
   }
-
-  # Check if columns presented in the input data and in the database
   if (!all(.data.col %in% colnames(.data[[1]]))) {
     stop("Can't find column(s) ", .data.col, " in the input data! Please check if you provided correct column names.")
   }
   if (!all(.db.col %in% colnames(.db))) {
     stop("Can't find column(s) ", .db.col, " in the database! Please check if you provided correct column names.")
   }
-
-  # ToDo: make a more optimal way to column naming
-  for (i in 1:length(.db.col)) {
-    .db[[.data.col[i]]] <- .db[[.db.col[i]]]
+  
+  # Only supports single column (CDR3.aa) for distance-based matching in this example
+  if (.max_dist > 0 && length(.data.col) == 1) {
+    # Requires stringdist package
+    if (!requireNamespace("stringdist", quietly = TRUE)) {
+      stop("The stringdist package is required for distance-based annotation.")
+    }
+    res_list <- lapply(.data, function(sample) {
+      sample_seqs <- sample[[.data.col]]
+      db_seqs <- .db[[.db.col]]
+      # Compute distance matrix
+      dist_mat <- stringdist::stringdistmatrix(sample_seqs, db_seqs, method = "lv")
+      # For each sample sequence, find closest db match within max_dist
+      min_dist <- apply(dist_mat, 1, min)
+      match_idx <- apply(dist_mat, 1, which.min)
+      # Annotate only those within .max_dist
+      annotate <- min_dist <= .max_dist
+      out <- sample[annotate, , drop = FALSE]
+      db_annots <- .db[match_idx[annotate], , drop = FALSE]
+      out$annotation_db_match <- db_annots[[.db.col]]
+      out$distance <- min_dist[annotate]
+      out
+    })
+    ann_res <- do.call(rbind, res_list)
+    ann_res
+  } else {
+    # Original exact match approach
+    for (i in 1:length(.db.col)) {
+      .db[[.data.col[i]]] <- .db[[.db.col[i]]]
+    }
+    ann_res <- trackClonotypes(.data, .db %>% select(.data.col), .norm = FALSE)
+    ann_res$Samples <- rowSums(ann_res[, 2:ncol(ann_res)] > 0)
+    ann_res <- ann_res[ann_res$Samples > 0, ]
+    ann_res <- ann_res[order(ann_res$Samples, decreasing = TRUE), ]
+    setcolorder(ann_res, c(.data.col, "Samples", names(ann_res)[(length(.data.col) + 1):(ncol(ann_res) - 1)]))
+    ann_res
   }
-
-  ann_res <- trackClonotypes(.data, .db %>% select(.data.col), .norm = FALSE)
-
-  ann_res$Samples <- rowSums(ann_res[, 2:ncol(ann_res)] > 0)
-  ann_res <- ann_res[ann_res$Samples > 0, ]
-  ann_res <- ann_res[order(ann_res$Samples, decreasing = TRUE), ]
-
-  setcolorder(ann_res, c(.data.col, "Samples", names(ann_res)[(length(.data.col) + 1):(ncol(ann_res) - 1)]))
-
-  ann_res
 }
 
 

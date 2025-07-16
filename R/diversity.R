@@ -3,21 +3,21 @@ if (getRversion() >= "2.15.1") {
 }
 
 
-#' The main function for immune repertoire diversity estimation
+#' Main function for immune repertoire diversity estimation
 #'
 #' @concept diversity
 #'
-#' @aliases repDiversity chao1 hill_numbers diversity_eco gini_simpson inverse_simpson gini_coef rarefaction shannon_diversity
+#' @aliases repDiversity chao1 hill_numbers diversity_eco gini_simpson inverse_simpson gini_coef rarefaction
 #'
 #' @importFrom reshape2 melt
 #' @importFrom utils tail
 #' @importFrom dplyr mutate group_by_at pull
 #' @importFrom stats qnorm
 #' @importFrom rlang sym
-#' @importFrom tidyselect all_of
 #'
 #' @description
-#' This is a utility function to estimate the diversity of species or objects in the given distribution.
+#' This is a utility function to estimate the diversity of species or objects
+#' in the given distribution.
 #'
 #' Note: functions will check if .data is a distribution of a random variable (sum == 1) or not.
 #' To force normalisation and / or to prevent this, set .do.norm to TRUE (do normalisation)
@@ -35,8 +35,8 @@ if (getRversion() >= "2.15.1") {
 #'
 #' Note: each connection must represent a separate repertoire.
 #'
-#' @param .method Picks a method used for estimation out of a following list: chao1,
-#' hill, div, gini.simp, inv.simp, gini, raref, d50, dxx, shannon.
+#' @param .method Pick a method used for estimation out of a following list: chao1,
+#' hill, div, gini.simp, inv.simp, gini, raref, d50, dxx.
 #' @param .col A string that specifies the column(s) to be processed. Pass one of the
 #' following strings, separated by the plus sign: "nt" for nucleotide sequences,
 #' "aa" for amino acid sequences, "v" for V gene segments, "j" for J gene segments. E.g.,
@@ -51,15 +51,15 @@ if (getRversion() >= "2.15.1") {
 #' @param .extrapolation An integer. An upper limit for the number of clones to extrapolate to.
 #' Pass 0 (zero) to turn extrapolation subroutines off.
 #' @param .perc Set the percent to dXX index measurement.
-#' @param .norm Normalises rarefaction curves.
-#' @param .verbose If TRUE then outputs progress.
-#' @param .do.norm One of the three values - NA, TRUE or FALSE. If NA then checks for distrubution (sum(.data) == 1)
-#' and normalises if needed with the given laplace correction value. if TRUE then does normalisation and laplace
-#' correction. If FALSE then doesn't do neither normalisaton nor laplace correction.
+#' @param .norm Normalise rarefaction curves.
+#' @param .verbose If TRUE then output progress.
+#' @param .do.norm One of the three values - NA, TRUE or FALSE. If NA then check for distrubution (sum(.data) == 1)
+#' and normalise if needed with the given laplace correction value. if TRUE then do normalisation and laplace
+#' correction. If FALSE then don't do normalisaton and laplace correction.
 #' @param .laplace A numeric value, which is used as a pseudocount for Laplace
 #' smoothing.
 #'
-#' @return div, gini, gini.simp, inv.simp, raref, shannon return numeric vector of length 1
+#' @return div, gini, gini.simp, inv.simp, raref return numeric vector of length 1
 #' with value.
 #'
 #' chao1 returns 4 values: estimated number of species, standart deviation of
@@ -99,9 +99,8 @@ if (getRversion() >= "2.15.1") {
 #'
 #' - dXX is a similar to d50 index where XX corresponds to desirable percent of total sequencing reads.
 #' 
-#' - Shannon diversity index (Shannon entropy) measures the uncertainty in predicting the species identity
-#' of an individual that is taken at random from the dataset. It increases as both the richness
-#' and the evenness of the community increase.
+#' - Shannon Index is perhaps most commonly used of the many species diversity indices used in the literature.
+#' On some occasions it is called the Shannon-Wiener Index and on other occasions it is called the Shannon-Weaver Index.  
 #'
 #' @return
 #' For most methods, if input data is a single immune repertoire, then the function returns a numeric vector
@@ -155,9 +154,9 @@ if (getRversion() >= "2.15.1") {
 #'
 #' # d50
 #' repDiversity(.data = immdata$data, .method = "d50") %>% vis()
-#'
-#' # Shannon diversity
-#' repDiversity(.data = immdata$data, .method = "shannon", .do.norm = NA, .laplace = 0) %>% vis()
+#' 
+#' # Shannon-Wiener index
+#' repDiversity(.data = immdata$data, .method = "shannon", .do.norm = NA, .laplace = 0)
 #' @export repDiversity
 repDiversity <- function(.data, .method = "chao1", .col = "aa", .max.q = 6, .min.q = 1, .q = 5, .step = NA,
                          .quantile = c(.025, .975), .extrapolation = NA, .perc = 50,
@@ -182,7 +181,7 @@ repDiversity <- function(.data, .method = "chao1", .col = "aa", .max.q = 6, .min
       res <- reshape2::melt(res)
       colnames(res) <- c("Sample", "Q", "Value")
       res$Q <- as.numeric(sapply(res$Q, stringr::str_sub, start = 2))
-    } else if (.method %in% c("div", "gini.simp", "inv.simp", "shannon")) {
+    } else if (.method %in% c("div", "gini.simp", "inv.simp")) {
       res <- reshape2::melt(res)[c(1, 3)]
       colnames(res) <- c("Sample", "Value")
     } else if (.method == "chao1") {
@@ -191,10 +190,12 @@ repDiversity <- function(.data, .method = "chao1", .col = "aa", .max.q = 6, .min
 
     res <- add_class(res, new_class)
     return(res)
-  } else if (.method == "raref") {
+  }
+  else if (.method == "raref") {
     if (!has_class(.data, "list")) {
       .data <- list(Sample = .data)
     }
+
 
     .col <- process_col_argument(.col) # ToDo: refactor this and the next branches
 
@@ -203,12 +204,13 @@ repDiversity <- function(.data, .method = "chao1", .col = "aa", .max.q = 6, .min
         x <- x %>% lazy_dt()
       }
       x %>%
-        select(all_of(.col), IMMCOL$count) %>%
+        select(.col, IMMCOL$count) %>%
         group_by_at(vars(.col)) %>%
         summarise(Div.count = sum(!!sym(IMMCOL$count))) %>%
         pull(Div.count)
     })
-  } else {
+  }
+  else {
     .col <- process_col_argument(.col)
 
     if (has_class(.data, "data.table")) {
@@ -229,7 +231,7 @@ repDiversity <- function(.data, .method = "chao1", .col = "aa", .max.q = 6, .min
     gini.simp = gini_simpson(.data = vec, .do.norm = TRUE, .laplace = .laplace),
     inv.simp = inverse_simpson(.data = vec, .do.norm = TRUE, .laplace = .laplace),
     gini = gini_coef(.data = vec, .do.norm = TRUE, .laplace = .laplace),
-    shannon = shannon_diversity(.data = vec, .do.norm = TRUE, .laplace = .laplace),
+    shannon = shannon(.data = vec, .do.norm = TRUE, .laplace = .laplace),
     raref = rarefaction(
       .data = vec, .step = .step, .quantile = .quantile,
       .extrapolation = .extrapolation, .norm = .norm, .verbose = .verbose
@@ -332,12 +334,11 @@ inverse_simpson <- function(.data, .do.norm = NA, .laplace = 0) {
   add_class(res, "immunr_invsimp")
 }
 
-shannon_diversity <- function(.data, .do.norm = NA, .laplace = 0) {
-  # Ensure the data is a probability distribution (sums to 1)
+shannon <- function(.data, .do.norm = NA, .laplace = 0) {
   .data <- check_distribution(.data, .do.norm, .laplace)
-  # Remove zeroes to avoid log(0)
-  .data <- .data[.data > 0]
-  res <- -sum(.data * log(.data))
+  .data <- .data[.data>0]
+  p = .data/sum(.data)
+  res <-  -p%*%log(p)/log(length(p))
   add_class(res, "immunr_shannon")
 }
 
@@ -367,20 +368,20 @@ rarefaction <- function(.data, .step = NA, .quantile = c(.025, .975),
   if (is.na(.step)) {
     .step <- min(sapply(.data, function(x) sum(as.numeric(x)))) %/% 50.
   }
-  .step <- max(1, .step)
 
   if (is.na(.extrapolation)) {
     .extrapolation <- max(sapply(.data, function(x) sum(as.numeric(x)))) * 20
   }
 
   .alpha <- function(n, Xi, m) {
+    k <- Xi
     return((1 - m / n)^Xi)
   }
 
   if (.verbose) {
-    pb <- set_pb(sum(sapply(seq_along(.data), function(i) {
+    pb <- set_pb(sum(sapply(1:length(.data), function(i) {
       bc.vec <- .data[[i]]
-      bc.sum <- sum(bc.vec)
+      bc.sum <- sum(.data[[i]])
       sizes <- seq(.step, bc.sum, .step)
       if (sizes[length(sizes)] != bc.sum) {
         sizes <- c(sizes, bc.sum)
@@ -389,16 +390,15 @@ rarefaction <- function(.data, .step = NA, .quantile = c(.025, .975),
     })))
   }
 
-  muc.list <- lapply(seq_along(.data), function(i) {
+  muc.list <- lapply(1:length(.data), function(i) {
     Sobs <- length(.data[[i]])
     bc.vec <- .data[[i]]
-    Sest <- chao1(bc.vec)[1]
-    if (is.na(Sest)) {
-      Sest <- Sobs
-    }
+    Sest <- chao1(bc.vec)
     n <- sum(bc.vec)
     sizes <- seq(.step, n, .step)
-
+    # if (sizes[length(sizes)] != n) {
+    #   sizes <- c(sizes, n)
+    # }
     counts <- table(bc.vec)
     muc.res <- t(sapply(sizes, function(sz) {
       freqs <- as.numeric(names(counts))
@@ -406,11 +406,11 @@ rarefaction <- function(.data, .step = NA, .quantile = c(.025, .975),
       alphas <- sapply(freqs, function(k) .alpha(n, k, sz))
 
       # poisson
-      Sind <- sum(sapply(seq_along(freqs), function(k) (1 - alphas[k]) * counts[k]))
-      if (Sest == Sobs) {
+      Sind <- sum(sapply(1:length(freqs), function(k) (1 - alphas[k]) * counts[k]))
+      if (Sest[1] == Sobs) {
         SD <- 0
       } else {
-        SD <- sqrt(sum(sapply(seq_along(freqs), function(k) (1 - alphas[k])^2 * counts[k])) - Sind^2 / Sest[1])
+        SD <- sqrt(sum(sapply(1:length(freqs), function(k) (1 - alphas[k])^2 * counts[k])) - Sind^2 / Sest[1])
       }
       t <- Sind - Sobs
       if (t != 0) {
@@ -421,13 +421,14 @@ rarefaction <- function(.data, .step = NA, .quantile = c(.025, .975),
         lo <- Sind
         hi <- Sind
       }
-      res <- c(sz, lo, Sind, hi)
+      res <- c(sz, Sind, lo, hi)
       names(res) <- c("Size", paste0("Q", .quantile[1]), "Mean", paste0("Q", .quantile[2]))
       if (.verbose) add_pb(pb)
       res
     }))
 
     if (.extrapolation > 0) {
+      # sizes <- seq(sum(.data[[i]]), .extrapolation + max(sapply(.data, function (x) sum(x))), .step)
       sizes <- seq(
         tail(seq(.step, sum(.data[[i]]), .step), 1) + .step,
         .extrapolation,
@@ -435,7 +436,7 @@ rarefaction <- function(.data, .step = NA, .quantile = c(.025, .975),
       )
       if (length(sizes) != 1) {
         ex.res <- t(sapply(sizes, function(sz) {
-          f0 <- Sest - Sobs
+          f0 <- Sest[1] - Sobs
           f1 <- counts["1"]
           if (is.na(f1) || f0 == 0) {
             Sind <- Sobs
